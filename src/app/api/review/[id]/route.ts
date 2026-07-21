@@ -22,8 +22,9 @@ function parseWriterIds(): string[] {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
+  const { id } = await context.params;
   // Auth.
   const authHeader = req.headers.get('authorization') ?? '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -70,7 +71,7 @@ export async function POST(
   const { data: row, error: fetchError } = await db
     .from('review_queue')
     .select('*')
-    .eq('id', params.id)
+    .eq('id', id)
     .maybeSingle();
 
   if (fetchError) {
@@ -112,7 +113,7 @@ export async function POST(
     }
 
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[review/${params.id}] handleReviewDecision threw:`, message);
+    console.error(`[review/${id}] handleReviewDecision threw:`, message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
