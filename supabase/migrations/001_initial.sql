@@ -1,0 +1,11 @@
+-- supabase/migrations/001_initial.sql
+-- Re-export of the base schema as a named migration for migration tracking.
+-- This file is IDENTICAL to supabase/schema.sql from Stage 1.
+-- Apply this FIRST if you are using the migrations folder; skip if you already
+-- applied schema.sql directly in the SQL editor.
+--
+-- If you already applied schema.sql manually to misfit-backend, do NOT re-run
+-- this file — the objects already exist. This is a tracking artifact only.
+--
+-- SENTINEL: This file intentionally left as a comment block so D knows the
+-- migration numbering starts at 001. Stage 2 migration is 002_tags.sql.
