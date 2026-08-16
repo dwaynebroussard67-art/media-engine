@@ -11,9 +11,19 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
-import { verifyUserJwt, getSupabaseAdmin } from '../../../lib/supabaseClient';
+import { verifyUserJwt, getSupabaseAdmin, SupabaseNotConfiguredError } from '../../../lib/supabaseClient';
 import { addToGallery, supabaseAssetStore } from '../../../lib/permanentAssets';
 import type { AssetBrand, AssetCategory, GalleryAsset } from '../../../types/media';
+
+function notConfiguredResponse(err: unknown): NextResponse | null {
+  if (err instanceof SupabaseNotConfiguredError) {
+    return NextResponse.json(
+      { error: err.message },
+      { status: 503 }
+    );
+  }
+  return null;
+}
 
 const VALID_BRANDS: ReadonlySet<AssetBrand> = new Set(['misfit', 'forge', 'shared']);
 const VALID_CATEGORIES: ReadonlySet<AssetCategory> = new Set([
@@ -59,6 +69,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
     return NextResponse.json({ assets });
   } catch (err) {
+    const configured = notConfiguredResponse(err);
+    if (configured) return configured;
     const message = err instanceof Error ? err.message : String(err);
     console.error('[gallery GET]', message);
     return NextResponse.json({ error: message }, { status: 500 });
@@ -77,7 +89,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Authorization header required' }, { status: 401 });
   }
 
-  const user = await verifyUserJwt(token);
+  let user: { id: string; email?: string } | null;
+  try {
+    user = await verifyUserJwt(token);
+  } catch (err) {
+    const configured = notConfiguredResponse(err);
+    if (configured) return configured;
+    throw err;
+  }
   if (!user) {
     return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
   }
@@ -127,7 +146,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // 6. Upload to Storage.
   const assetId = randomUUID();
   const storagePath = `gallery/${brandRaw}/${assetId}.${ext}`;
-  const db = getSupabaseAdmin();
+  let db: ReturnType<typeof getSupabaseAdmin>;
+  try {
+    db = getSupabaseAdmin();
+  } catch (err) {
+    const configured = notConfiguredResponse(err);
+    if (configured) return configured;
+    throw err;
+  }
 
   const fileBuffer = Buffer.from(await file.arrayBuffer());
 

@@ -8,11 +8,11 @@
 //   Array of { file: string (relative path from manifest dir), brand, category, tags? }
 //
 // Usage:
-//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx ts-node scripts/seed.ts \
+//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed -- \
 //     --manifest ./seeds/seed-manifest.json
 //
-// Unverified — traced by hand.
-// ts-node must be installed: npm i -D ts-node
+// Runs via `tsx` (already in devDependencies) — see the "seed" script in
+// package.json.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -88,7 +88,7 @@ async function main() {
   const args = process.argv.slice(2);
   const manifestFlagIdx = args.indexOf('--manifest');
   if (manifestFlagIdx === -1 || !args[manifestFlagIdx + 1]) {
-    console.error('Usage: ts-node scripts/seed.ts --manifest <path-to-manifest.json>');
+    console.error('Usage: npm run seed -- --manifest <path-to-manifest.json>');
     process.exit(1);
   }
 

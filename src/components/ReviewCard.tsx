@@ -14,6 +14,7 @@
 //   - Disabled state is propagated to all three action buttons.
 
 import React, { useState } from 'react';
+import { resolveMediaUrl } from '../lib/mediaUrl';
 import type { ReviewItem, ReviewDecision } from '../types/media';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -67,7 +68,7 @@ export function ReviewCard({
       <div className="relative aspect-square w-full overflow-hidden rounded
                       bg-neutral-900 border border-neutral-800">
         <img
-          src={item.imageUrl}
+          src={resolveMediaUrl(item.imageUrl)}
           alt={`Pending review — ${item.brand} / ${item.generationLane}`}
           className="object-contain h-full w-full"
           loading="lazy"

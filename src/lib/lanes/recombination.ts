@@ -119,6 +119,10 @@ export async function generateRecombinationPost(
     assetStore: AssetStore;
     textBank: TextBankProvider;
     renderer: TextOverlayRenderer;
+    // Test-only override: when supplied, rotation_state is neither read nor
+    // advanced (tests own their state). Production callers omit it so the
+    // persisted pointer keeps every batch moving through the asset queue.
+    lastUsedIndex?: number;
   },
 ): Promise<RenderedItem> {
   // Gather eligible bases: brand-specific + shared, excluding logos.
@@ -135,7 +139,7 @@ export async function generateRecombinationPost(
     throw new NoEligibleBaseError(brand);
   }
 
-  const lastIndex = await getLastUsedIndex(brand);
+  const lastIndex = deps.lastUsedIndex ?? (await getLastUsedIndex(brand));
   const { base, nextIndex } = selectDeterministicBase(eligible, lastIndex);
 
   const text = await deps.textBank.pick(brand);
@@ -143,7 +147,9 @@ export async function generateRecombinationPost(
   // Render first; only advance the rotation pointer on success.
   const rendered = await deps.renderer.render(base.url, text, brand);
 
-  await advanceRotation(brand, base.id, nextIndex);
+  if (deps.lastUsedIndex === undefined) {
+    await advanceRotation(brand, base.id, nextIndex);
+  }
 
   return {
     id:             randomUUID(),

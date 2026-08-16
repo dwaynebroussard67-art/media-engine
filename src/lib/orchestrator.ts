@@ -92,6 +92,23 @@ const DEFAULT_MERCH_QUERY: Record<Brand, string> = {
 };
 const DEFAULT_MATCH_THRESHOLD = 0.5;
 
+/**
+ * Derives the tag-overlap query tags from the merch search query.
+ *
+ * The tagOverlapMatcher requires query tags to score anything; without them
+ * the first hierarchy level (gallery reuse) could never match and every
+ * merch candidate would skip straight to the catalog. Splitting the merch
+ * query into lowercase word tokens gives the matcher something real to
+ * overlap against the seeded asset tags.
+ */
+export function deriveMerchQueryTags(merchQuery: string): string[] {
+  return merchQuery
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/[^a-z0-9-]/g, ''))
+    .filter((t) => t.length > 0);
+}
+
 async function runMerchLane(
   brand: Brand,
   batchId: string,
@@ -105,7 +122,14 @@ async function runMerchLane(
 ): Promise<LaneOutcome> {
   let candidate: MerchCandidate;
   try {
-    candidate = await findMerchandiseCandidate(brand, deps);
+    candidate = await findMerchandiseCandidate(brand, {
+      assetStore: deps.assetStore,
+      galleryMatcher: deps.galleryMatcher,
+      catalogClient: deps.catalogClient,
+      merchQuery: deps.merchQuery,
+      matchThreshold: deps.matchThreshold,
+      queryTags: deriveMerchQueryTags(deps.merchQuery),
+    });
   } catch (err) {
     if (err instanceof CatalogUnavailableError) {
       return {
@@ -239,27 +263,40 @@ export async function assembleReviewBatch(
 ): Promise<BatchResult> {
   const batchId = randomUUID();
 
+  // NOTE ON ROTATION OVERRIDES:
+  //   deps.lastUsedFreshTextIndex / lastUsedRecombinationIndex are TEST-ONLY
+  //   overrides. They must be passed through ONLY when defined — forcing a
+  //   default here (e.g. `?? 0`) would pin every production batch to base
+  //   index 0 AND skip the persisted lane_rotation_state / rotation_state
+  //   advance, so every batch would re-render the same base image forever.
+  //   (This exact bug shipped once before; see the freshTextCard docstring.)
+  const freshTextDeps: Parameters<typeof generateFreshTextCard>[1] = {
+    assetStore: deps.assetStore,
+    textBank: deps.textBank,
+    renderer: deps.renderer,
+    ...(deps.lastUsedFreshTextIndex !== undefined
+      ? { lastUsedIndex: deps.lastUsedFreshTextIndex }
+      : {}),
+  };
+  const recombinationDeps: Parameters<typeof generateRecombinationPost>[1] = {
+    assetStore: deps.assetStore,
+    textBank: deps.textBank,
+    renderer: deps.renderer,
+    ...(deps.lastUsedRecombinationIndex !== undefined
+      ? { lastUsedIndex: deps.lastUsedRecombinationIndex }
+      : {}),
+  };
+
   const [freshTextOutcome, recombinationOutcome, merchOutcome] = await Promise.allSettled([
     runGenerationLane(
       'fresh_text_card',
-      () =>
-        generateFreshTextCard(brand, {
-          assetStore: deps.assetStore,
-          textBank: deps.textBank,
-          renderer: deps.renderer,
-          lastUsedIndex: deps.lastUsedFreshTextIndex ?? 0,
-        }),
+      () => generateFreshTextCard(brand, freshTextDeps),
       batchId,
       brand
     ),
     runGenerationLane(
       'recombination',
-      () =>
-        generateRecombinationPost(brand, {
-          assetStore: deps.assetStore,
-          textBank: deps.textBank,
-          renderer: deps.renderer,
-        }),
+      () => generateRecombinationPost(brand, recombinationDeps),
       batchId,
       brand
     ),

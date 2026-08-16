@@ -11,9 +11,27 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+/**
+ * Typed configuration error — thrown when a required Supabase env var is
+ * missing. API routes map this to a 503 with an actionable message instead
+ * of surfacing a raw `Missing required env var` 500.
+ */
+export class SupabaseNotConfiguredError extends Error {
+  public readonly missingVars: string[];
+
+  constructor(missingVars: string[]) {
+    super(
+      `Supabase is not configured on the server. Missing env: ${missingVars.join(', ')}. ` +
+      `Set these values in the deployment (see .env.example).`,
+    );
+    this.name = 'SupabaseNotConfiguredError';
+    this.missingVars = missingVars;
+  }
+}
+
 function requireEnv(name: string): string {
   const v = process.env[name];
-  if (!v) throw new Error(`[Supabase] Missing required env var: ${name}`);
+  if (!v) throw new SupabaseNotConfiguredError([name]);
   return v;
 }
 

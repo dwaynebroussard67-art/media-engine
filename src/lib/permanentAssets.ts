@@ -44,6 +44,15 @@ export interface AssetStore {
 // ── Row → domain mapper ───────────────────────────────────────────────────────
 
 function rowToAsset(row: Record<string, unknown>): GalleryAsset {
+  // tags arrives as text[] from Postgres (migration 002). It is mapped here
+  // so the tag-overlap merch matcher has something to score against —
+  // without this, gallery_reuse could never match and the hierarchy's
+  // first level was dead code.
+  const rawTags = Array.isArray(row.tags) ? (row.tags as unknown[]) : [];
+  const tags: string[] = rawTags.filter(
+    (t): t is string => typeof t === 'string',
+  );
+
   return {
     id:                 row.id as string,
     url:                row.url as string,
@@ -54,6 +63,7 @@ function rowToAsset(row: Record<string, unknown>): GalleryAsset {
     originalTemplateId: (row.original_template_id as string | null) ?? undefined,
     addedAt:            Number(row.added_at),
     permanent:          true,
+    tags,
   };
 }
 
@@ -85,6 +95,7 @@ export const supabaseAssetStore: AssetStore = {
       original_template_id: asset.originalTemplateId ?? null,
       added_at:             asset.addedAt,
       permanent:            true,
+      tags:                 asset.tags ? [...asset.tags] : [],
     });
 
     if (error) {

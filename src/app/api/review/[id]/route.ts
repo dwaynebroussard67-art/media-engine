@@ -7,11 +7,19 @@
 // Idempotent replay (same decision) → 200 with the existing record.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyUserJwt, getSupabaseAdmin } from '../../../../lib/supabaseClient';
+import { verifyUserJwt, getSupabaseAdmin, SupabaseNotConfiguredError } from '../../../../lib/supabaseClient';
 import { handleReviewDecision, FinalityViolationError } from '../../../../lib/review/reviewQueue';
-import type { ReviewItem, ReviewDecision } from '../../../../types/media';
+import { queueRowToReviewItem } from '../../../../lib/review/queueRow';
+import type { ReviewDecision } from '../../../../types/media';
 
 const VALID_DECISIONS: ReadonlySet<string> = new Set(['post', 'remix', 'reject']);
+
+function notConfiguredResponse(err: unknown): NextResponse | null {
+  if (err instanceof SupabaseNotConfiguredError) {
+    return NextResponse.json({ error: err.message }, { status: 503 });
+  }
+  return null;
+}
 
 function parseWriterIds(): string[] {
   return (process.env.GALLERY_WRITER_IDS ?? '')
@@ -32,7 +40,14 @@ export async function POST(
     return NextResponse.json({ error: 'Authorization header required' }, { status: 401 });
   }
 
-  const user = await verifyUserJwt(token);
+  let user: { id: string; email?: string } | null;
+  try {
+    user = await verifyUserJwt(token);
+  } catch (err) {
+    const configured = notConfiguredResponse(err);
+    if (configured) return configured;
+    throw err;
+  }
   if (!user) {
     return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
   }
@@ -67,7 +82,14 @@ export async function POST(
   }
 
   // Load queue row.
-  const db = getSupabaseAdmin();
+  let db: ReturnType<typeof getSupabaseAdmin>;
+  try {
+    db = getSupabaseAdmin();
+  } catch (err) {
+    const configured = notConfiguredResponse(err);
+    if (configured) return configured;
+    throw err;
+  }
   const { data: row, error: fetchError } = await db
     .from('review_queue')
     .select('*')
@@ -82,18 +104,19 @@ export async function POST(
     return NextResponse.json({ error: 'Review item not found' }, { status: 404 });
   }
 
-  // Reconstruct ReviewItem from queue row.
-  // The queue row stores all fields needed to rebuild a ReviewItem.
-  const item: ReviewItem = {
-    id: row.id as string,
-    imageUrl: row.image_url as string,
-    brand: row.brand as ReviewItem['brand'],
-    generationLane: row.lane as ReviewItem['generationLane'],
-    sourceData: (row.source_data ?? {}) as Record<string, unknown>,
-    createdAt: row.queued_at as number,
-    oracleResult: row.oracle_result as ReviewItem['oracleResult'],
-    ...(row.merch_meta ? { sourceDetail: JSON.stringify(row.merch_meta) } : {}),
-  };
+  // Reconstruct ReviewItem from queue row via the shared mapper —
+  // merchSource/sourceDetail are restored from merch_meta so the decision
+  // handler sees the same item the operator reviewed.
+  const item = queueRowToReviewItem({
+    id: row.id,
+    image_url: row.image_url,
+    brand: row.brand,
+    lane: row.lane,
+    source_data: row.source_data,
+    oracle_result: row.oracle_result,
+    merch_meta: row.merch_meta,
+    queued_at: row.queued_at,
+  });
 
   // Call the decision handler.
   try {

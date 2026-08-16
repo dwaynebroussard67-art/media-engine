@@ -25,6 +25,13 @@ export interface GalleryAsset {
   readonly originalTemplateId?: string;
   readonly addedAt: number;
   readonly permanent: true;
+  /**
+   * Added by migration 002_tags.sql (DB column). Optional on the domain
+   * type so pre-tags fixtures and stores keep compiling; the Supabase store
+   * always maps it, which is what lets the tag-overlap merch matcher find
+   * gallery-reuse candidates.
+   */
+  readonly tags?: readonly string[];
 }
 
 export type GenerationLane =

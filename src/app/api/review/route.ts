@@ -8,7 +8,7 @@
 // from the default view. D can inspect them explicitly with ?includeRejected=true.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseAdmin } from '../../../lib/supabaseClient';
+import { getSupabaseAdmin, SupabaseNotConfiguredError } from '../../../lib/supabaseClient';
 
 const VALID_BRANDS = new Set(['misfit', 'forge']);
 const DEFAULT_PAGE_SIZE = 20;
@@ -35,7 +35,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  const db = getSupabaseAdmin();
+  let db: ReturnType<typeof getSupabaseAdmin>;
+  try {
+    db = getSupabaseAdmin();
+  } catch (err) {
+    if (err instanceof SupabaseNotConfiguredError) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
+    throw err;
+  }
 
   // Build query.
   let query = db

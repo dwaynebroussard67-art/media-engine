@@ -11,13 +11,32 @@
 // server enforces GALLERY_WRITER_IDS regardless, this is just a faster no.
 
 import { useCallback, useEffect, useState, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { resolveMediaUrl } from '../../lib/mediaUrl';
 import type { AssetBrand, AssetCategory, GalleryAsset } from '../../types/media';
 
-const supabaseBrowser = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// Lazily-created browser client. Module-scope createClient(...) throws at
+// import time when NEXT_PUBLIC_SUPABASE_* is unset (breaks `next build`
+// during prerender) and supabase-js v2 rejects relative URLs — so the client
+// is created only in the browser, absolutizing a relative base against the
+// app origin (the Next rewrites then proxy /supabase/* to the local shim).
+let _browserClient: SupabaseClient | null | undefined;
+function supabaseBrowser(): SupabaseClient | null {
+  if (typeof window === 'undefined') return null; // SSR / prerender
+  if (_browserClient === undefined) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      _browserClient = null;
+    } else {
+      const absolute = url.startsWith('http')
+        ? url
+        : `${window.location.origin}${url}`;
+      _browserClient = createClient(absolute, key);
+    }
+  }
+  return _browserClient;
+}
 
 const BRANDS: AssetBrand[] = ['misfit', 'forge', 'shared'];
 const CATEGORIES: AssetCategory[] = ['logo', 'apparel', 'art', 'atmosphere', 'approved_post'];
@@ -37,7 +56,14 @@ export default function GalleryPage() {
   const [assets, setAssets] = useState<GalleryAsset[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Determined after mount — the browser client cannot be constructed during
+  // SSR/prerender (see supabaseBrowser()).
+  const [supabaseConfigured, setSupabaseConfigured] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setSupabaseConfigured(supabaseBrowser() !== null);
+  }, []);
 
   // --- Load existing gallery, filtered to the selected brand -------------
   const loadAssets = useCallback(async (b: AssetBrand) => {
@@ -69,9 +95,15 @@ export default function GalleryPage() {
 
       patch('uploading');
 
+      const client = supabaseBrowser();
+      if (!client) {
+        patch('error', 'Supabase auth not configured (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY).');
+        return;
+      }
+
       const {
         data: { session },
-      } = await supabaseBrowser.auth.getSession();
+      } = await client.auth.getSession();
 
       if (!session) {
         patch('error', 'Not signed in — sign in on the review page first.');
@@ -153,6 +185,13 @@ export default function GalleryPage() {
             Review lands here automatically too — nothing to do for that.
           </p>
         </header>
+
+        {!supabaseConfigured && (
+          <p className="text-amber-400 text-sm bg-amber-400/10 border border-amber-500/30 rounded p-3" role="alert">
+            Supabase auth is not configured — the grid is read-only. Set
+            NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable uploads.
+          </p>
+        )}
 
         {/* --- Brand / category selectors --- */}
         <div className="flex gap-3 flex-wrap">
@@ -253,7 +292,7 @@ export default function GalleryPage() {
                 className="aspect-square rounded overflow-hidden bg-neutral-900 border border-neutral-800 relative"
               >
                 <img
-                  src={asset.url}
+                  src={resolveMediaUrl(asset.url)}
                   alt={`${asset.category} asset`}
                   className="object-cover h-full w-full"
                   loading="lazy"

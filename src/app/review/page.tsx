@@ -20,27 +20,31 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient, type SupabaseClient, type Session } from '@supabase/supabase-js';
 import { ReviewCard } from '../../components/ReviewCard';
+import { queueRowToReviewItem } from '../../lib/review/queueRow';
 import type { ReviewItem, ReviewDecision, Brand } from '../../types/media';
 
 // ---------------------------------------------------------------------------
 // Supabase browser client — ANON key only. Never use service-role in the browser.
 // ---------------------------------------------------------------------------
 
-function getBrowserSupabase(): SupabaseClient {
+function getBrowserSupabase(): SupabaseClient | null {
+  // SSR / prerender: the client cannot be built here (supabase-js rejects
+  // relative URLs, and window is unavailable) — effects create it client-side.
+  if (typeof window === 'undefined') return null;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    throw new Error(
-      'NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set'
-    );
-  }
-  return createClient(url, key);
+  if (!url || !key) return null;
+  // Relative base (local dev shim): absolutize against the app origin so the
+  // Next rewrites can proxy /supabase/* to the shim.
+  const absolute = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+  return createClient(absolute, key);
 }
 
-// Singleton for the browser client.
-let _browserClient: SupabaseClient | null = null;
-function browserClient(): SupabaseClient {
-  if (!_browserClient) _browserClient = getBrowserSupabase();
+// Singleton for the browser client (null when Supabase is not configured —
+// the UI shows a configuration notice instead of crashing).
+let _browserClient: SupabaseClient | null | undefined;
+function browserClient(): SupabaseClient | null {
+  if (_browserClient === undefined) _browserClient = getBrowserSupabase();
   return _browserClient;
 }
 
@@ -58,21 +62,6 @@ interface QueueItem {
   merch_meta: unknown;
   queued_at: number;
   status: string;
-}
-
-function queueItemToReviewItem(row: QueueItem): ReviewItem {
-  return {
-    id: row.id,
-    imageUrl: row.image_url,
-    brand: row.brand,
-    generationLane: row.lane as ReviewItem['generationLane'],
-    sourceData: row.source_data,
-    createdAt: row.queued_at,
-    oracleResult: row.oracle_result,
-    ...(row.merch_meta
-      ? { sourceDetail: JSON.stringify(row.merch_meta) }
-      : {}),
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -123,9 +112,15 @@ export default function ReviewPage() {
 
   const PAGE_SIZE = 10;
 
+  // Determined after mount — the browser client cannot be constructed during
+  // SSR/prerender (see getBrowserSupabase()).
+  const [supabaseNotConfigured, setSupabaseNotConfigured] = useState(false);
+
   // Track session.
   useEffect(() => {
     const client = browserClient();
+    setSupabaseNotConfigured(client === null);
+    if (!client) return;
     client.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, s) => {
       setSession(s);
@@ -155,7 +150,7 @@ export default function ReviewPage() {
         page: number;
         pageSize: number;
       };
-      setItems(data.items.map(queueItemToReviewItem));
+      setItems(data.items.map(queueRowToReviewItem));
       setTotal(data.total);
     } catch (err) {
       addToast(`Network error: ${err instanceof Error ? err.message : String(err)}`, 'error');
@@ -175,9 +170,11 @@ export default function ReviewPage() {
 
   // Auth handlers.
   async function handleSendOtp() {
+    const client = browserClient();
+    if (!client) return;
     setAuthLoading(true);
     try {
-      const { error } = await browserClient().auth.signInWithOtp({ email });
+      const { error } = await client.auth.signInWithOtp({ email });
       if (error) {
         addToast(`OTP send failed: ${error.message}`, 'error');
       } else {
@@ -190,9 +187,11 @@ export default function ReviewPage() {
   }
 
   async function handleVerifyOtp() {
+    const client = browserClient();
+    if (!client) return;
     setAuthLoading(true);
     try {
-      const { error } = await browserClient().auth.verifyOtp({
+      const { error } = await client.auth.verifyOtp({
         email,
         token: otp,
         type: 'email',
@@ -206,7 +205,9 @@ export default function ReviewPage() {
   }
 
   async function handleSignOut() {
-    await browserClient().auth.signOut();
+    const client = browserClient();
+    if (!client) return;
+    await client.auth.signOut();
   }
 
   // Decision handler.
@@ -290,6 +291,26 @@ export default function ReviewPage() {
       </div>
 
       <h1 style={{ fontSize: 22, marginBottom: 16 }}>Media Engine — Review</h1>
+
+      {/* Supabase configuration notice — shown when the app runs without
+          NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY. */}
+      {supabaseNotConfigured && (
+        <div
+          role="alert"
+          style={{
+            background: '#7f1d1d',
+            color: '#fecaca',
+            border: '1px solid #b91c1c',
+            borderRadius: 8,
+            padding: '12px 16px',
+            marginBottom: 16,
+            fontSize: 14,
+          }}
+        >
+          Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and
+          NEXT_PUBLIC_SUPABASE_ANON_KEY to sign in and review the queue.
+        </div>
+      )}
 
       {/* Auth section */}
       {!session ? (

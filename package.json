@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx scripts/seed.ts",
+    "verify:schema": "tsx scripts/verify-schema.ts",
+    "shim": "tsx dev/local-supabase/shim.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",
@@ -17,9 +20,12 @@
     "sharp": "^0.33.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"

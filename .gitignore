@@ -1,6 +1,9 @@
 node_modules/
+.next/
 .env
-.env.local
+.env*.local
+.local-supabase/
 build/
 dist/
 .vercel/
+*.tsbuildinfo

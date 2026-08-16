@@ -42,12 +42,10 @@ export const tagOverlapMatcher: GalleryMatcher = {
     let best: { asset: GalleryAsset; confidence: number } | undefined;
 
     for (const asset of candidates) {
-      // GalleryAsset.tags is not in the Stage 1 type definition — it was added
-      // by migration 002_tags.sql. We access it via a type assertion because
-      // the base type cannot be changed without touching frozen types.
-      // This is the documented `any` exception at Supabase row boundaries.
-      const assetTags: string[] =
-        (asset as unknown as { tags?: string[] }).tags ?? [];
+      // GalleryAsset.tags flows from the gallery_assets.tags column (added by
+      // migration 002) via the AssetStore row mapper. Assets without tags
+      // score zero overlap and never match.
+      const assetTags: readonly string[] = asset.tags ?? [];
 
       const intersection = queryTags.filter((t) => assetTags.includes(t));
       const confidence = intersection.length / queryTags.length;

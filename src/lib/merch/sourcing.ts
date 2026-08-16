@@ -49,6 +49,13 @@ export interface MerchSourcingDeps {
   catalogClient?: ProductCatalogClient;
   merchQuery: string;
   matchThreshold: number;
+  /**
+   * Tags to score gallery assets against in step 1 (tag-overlap heuristic).
+   * Optional for interface compatibility; when omitted, gallery reuse cannot
+   * match (tagOverlapMatcher returns undefined with zero query tags) and the
+   * hierarchy proceeds to catalog search, exactly as before.
+   */
+  queryTags?: string[];
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -62,6 +69,7 @@ export async function findMerchandiseCandidate(
   const artAssets = await deps.assetStore.list({ brand, category: 'art' });
   const closestMatch = deps.galleryMatcher.findClosest(artAssets, {
     category: 'art',
+    tags: deps.queryTags,
   });
 
   if (
@@ -71,7 +79,7 @@ export async function findMerchandiseCandidate(
     return {
       source: 'gallery_reuse',
       asset:  closestMatch.asset,
-      detail: `reused asset: ${closestMatch.asset.id} (confidence: ${closestMatch.confidence.toFixed(2)})`,
+      detail: `reused asset: ${closestMatch.asset.id} (tag overlap confidence: ${closestMatch.confidence.toFixed(2)})`,
     };
   }
 

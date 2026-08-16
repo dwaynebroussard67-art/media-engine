@@ -1,0 +1,11 @@
+/* src/app/globals.css
+   Tailwind v4 entry. The app's components (ReviewCard, gallery page, layout)
+   were written against Tailwind utility classes but the project shipped
+   without Tailwind installed — this file (imported by the root layout) is
+   what makes those classes actually apply. */
+@import 'tailwindcss';
+
+/* Base body treatment so pages look right even before hydration. */
+html {
+  color-scheme: dark;
+}
