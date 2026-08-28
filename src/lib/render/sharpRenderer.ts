@@ -82,9 +82,10 @@ function wrapText(text: string, maxCharsPerLine: number): string[] {
  * `width` and `height` are the pixel dimensions of the base image —
  * the SVG viewport must match for correct positioning.
  *
- * The scrim is a semi-transparent rectangle behind the text block.
- * scrim opacity is expected as a number 0–1 in BRAND_TYPOGRAPHY[brand].scrim.
- * If no scrim is configured, no rectangle is drawn.
+ * The scrim is a semi-transparent rectangle behind the text block, drawn
+ * from BRAND_TYPOGRAPHY[brand].backgroundColor + .opacity (there is no
+ * `.scrim` field — a prior draft invented phantom fields; see dossier §5.2).
+ * If backgroundColor is null, no rectangle is drawn.
  */
 function buildSvgOverlay(
   text: string,

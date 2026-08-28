@@ -43,7 +43,16 @@ export interface AssetStore {
 
 // ── Row → domain mapper ───────────────────────────────────────────────────────
 
-function rowToAsset(row: Record<string, unknown>): GalleryAsset {
+/**
+ * Maps a gallery_assets row to the domain type.
+ *
+ * `tags` (added by migration 002_tags.sql) is not part of the frozen
+ * GalleryAsset type, so it rides along via an intersection type at this
+ * Supabase row boundary — the same documented assertion pattern the
+ * tagMatcher uses to read it. Without this, the tags column was dropped
+ * on the floor and tag-overlap matching could never succeed.
+ */
+function rowToAsset(row: Record<string, unknown>): GalleryAsset & { tags?: string[] } {
   return {
     id:                 row.id as string,
     url:                row.url as string,
@@ -54,6 +63,7 @@ function rowToAsset(row: Record<string, unknown>): GalleryAsset {
     originalTemplateId: (row.original_template_id as string | null) ?? undefined,
     addedAt:            Number(row.added_at),
     permanent:          true,
+    tags:               Array.isArray(row.tags) ? (row.tags as string[]) : [],
   };
 }
 

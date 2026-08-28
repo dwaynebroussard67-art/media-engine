@@ -84,6 +84,20 @@ export async function POST(
 
   // Reconstruct ReviewItem from queue row.
   // The queue row stores all fields needed to rebuild a ReviewItem.
+  // merch_meta (a MerchCandidate) supplies merchSource + a human-readable
+  // sourceDetail, per dossier §5.16 — previously merchSource was never set,
+  // so the review UI's merch badge could never appear.
+  const merchMeta =
+    row.merch_meta !== null && typeof row.merch_meta === 'object'
+      ? (row.merch_meta as { source?: unknown; detail?: unknown })
+      : null;
+  const merchSource =
+    merchMeta && typeof merchMeta.source === 'string'
+      ? (merchMeta.source as ReviewItem['merchSource'])
+      : undefined;
+  const sourceDetail =
+    merchMeta && typeof merchMeta.detail === 'string' ? merchMeta.detail : undefined;
+
   const item: ReviewItem = {
     id: row.id as string,
     imageUrl: row.image_url as string,
@@ -92,7 +106,8 @@ export async function POST(
     sourceData: (row.source_data ?? {}) as Record<string, unknown>,
     createdAt: row.queued_at as number,
     oracleResult: row.oracle_result as ReviewItem['oracleResult'],
-    ...(row.merch_meta ? { sourceDetail: JSON.stringify(row.merch_meta) } : {}),
+    ...(merchSource ? { merchSource } : {}),
+    ...(sourceDetail ? { sourceDetail } : {}),
   };
 
   // Call the decision handler.

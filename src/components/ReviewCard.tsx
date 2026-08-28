@@ -48,8 +48,8 @@ export function ReviewCard({
     try {
       await onDecide(decision);
     } finally {
-      // Keep buttons disabled after a decision to prevent double-submission.
-      // Parent component should unmount or replace the card after resolution.
+      // Reset local pending; the parent removes the card on success, and on
+      // failure the buttons must re-enable so the operator can retry.
       setPending(false);
     }
   };
