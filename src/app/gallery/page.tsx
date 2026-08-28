@@ -83,6 +83,12 @@ export default function GalleryPage() {
     loadAssets(brand);
   }, [brand, loadAssets]);
 
+  // Deep link: /gallery?brand=forge pre-selects the brand (dashboard links here).
+  useEffect(() => {
+    const b = new URLSearchParams(window.location.search).get('brand');
+    if (b === 'misfit' || b === 'forge' || b === 'shared') setBrand(b);
+  }, []);
+
   // --- Upload a single file against the existing Stage 1 endpoint --------
   const uploadOne = useCallback(
     async (qf: QueuedFile, index: number) => {

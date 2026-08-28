@@ -186,6 +186,12 @@ export default function ReviewPage() {
     setPage(1);
   }, [brand]);
 
+  // Deep link: /review?brand=forge pre-selects the brand (dashboard links here).
+  useEffect(() => {
+    const b = new URLSearchParams(window.location.search).get('brand');
+    if (b === 'misfit' || b === 'forge') setBrand(b);
+  }, []);
+
   // Auth handlers.
   async function handleSendOtp() {
     setAuthLoading(true);
