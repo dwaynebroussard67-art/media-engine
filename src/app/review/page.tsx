@@ -61,6 +61,20 @@ interface QueueItem {
 }
 
 function queueItemToReviewItem(row: QueueItem): ReviewItem {
+  // merch_meta is a MerchCandidate: surface its `source` as merchSource
+  // (drives the ReviewCard badge) and its human-readable `detail` as
+  // sourceDetail — not the raw JSON blob.
+  const merch =
+    row.merch_meta !== null && typeof row.merch_meta === 'object'
+      ? (row.merch_meta as { source?: unknown; detail?: unknown })
+      : null;
+  const merchSource =
+    merch && typeof merch.source === 'string'
+      ? (merch.source as ReviewItem['merchSource'])
+      : undefined;
+  const sourceDetail =
+    merch && typeof merch.detail === 'string' ? merch.detail : undefined;
+
   return {
     id: row.id,
     imageUrl: row.image_url,
@@ -69,9 +83,8 @@ function queueItemToReviewItem(row: QueueItem): ReviewItem {
     sourceData: row.source_data,
     createdAt: row.queued_at,
     oracleResult: row.oracle_result,
-    ...(row.merch_meta
-      ? { sourceDetail: JSON.stringify(row.merch_meta) }
-      : {}),
+    ...(merchSource ? { merchSource } : {}),
+    ...(sourceDetail ? { sourceDetail } : {}),
   };
 }
 
@@ -172,6 +185,12 @@ export default function ReviewPage() {
   useEffect(() => {
     setPage(1);
   }, [brand]);
+
+  // Deep link: /review?brand=forge pre-selects the brand (dashboard links here).
+  useEffect(() => {
+    const b = new URLSearchParams(window.location.search).get('brand');
+    if (b === 'misfit' || b === 'forge') setBrand(b);
+  }, []);
 
   // Auth handlers.
   async function handleSendOtp() {

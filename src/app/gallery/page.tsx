@@ -11,13 +11,28 @@
 // server enforces GALLERY_WRITER_IDS regardless, this is just a faster no.
 
 import { useCallback, useEffect, useState, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { AssetBrand, AssetCategory, GalleryAsset } from '../../types/media';
 
-const supabaseBrowser = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// Lazily-initialized browser client (anon key). This MUST NOT run at module
+// scope: `next build` prerenders this page, and a module-scope createClient
+// throws "supabaseUrl is required" when the NEXT_PUBLIC_* vars are absent at
+// build time — which broke production builds. Same lazy-singleton pattern as
+// the review page.
+let _browserClient: SupabaseClient | null = null;
+function browserClient(): SupabaseClient {
+  if (!_browserClient) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      throw new Error(
+        'NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set'
+      );
+    }
+    _browserClient = createClient(url, key);
+  }
+  return _browserClient;
+}
 
 const BRANDS: AssetBrand[] = ['misfit', 'forge', 'shared'];
 const CATEGORIES: AssetCategory[] = ['logo', 'apparel', 'art', 'atmosphere', 'approved_post'];
@@ -38,6 +53,15 @@ export default function GalleryPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Mirrors queue.length so handleFiles can compute upload indexes without
+  // reading (possibly stale) state or running side effects inside a
+  // setState updater — StrictMode double-invokes updaters, which used to
+  // double-fire uploads into the append-only gallery.
+  const queueLenRef = useRef(0);
+
+  useEffect(() => {
+    queueLenRef.current = queue.length;
+  }, [queue]);
 
   // --- Load existing gallery, filtered to the selected brand -------------
   const loadAssets = useCallback(async (b: AssetBrand) => {
@@ -59,6 +83,12 @@ export default function GalleryPage() {
     loadAssets(brand);
   }, [brand, loadAssets]);
 
+  // Deep link: /gallery?brand=forge pre-selects the brand (dashboard links here).
+  useEffect(() => {
+    const b = new URLSearchParams(window.location.search).get('brand');
+    if (b === 'misfit' || b === 'forge' || b === 'shared') setBrand(b);
+  }, []);
+
   // --- Upload a single file against the existing Stage 1 endpoint --------
   const uploadOne = useCallback(
     async (qf: QueuedFile, index: number) => {
@@ -71,7 +101,7 @@ export default function GalleryPage() {
 
       const {
         data: { session },
-      } = await supabaseBrowser.auth.getSession();
+      } = await browserClient().auth.getSession();
 
       if (!session) {
         patch('error', 'Not signed in — sign in on the review page first.');
@@ -117,13 +147,13 @@ export default function GalleryPage() {
 
       const rejected = files.length - next.length;
 
-      setQueue((prev) => {
-        const startIndex = prev.length;
-        const merged = [...prev, ...next];
-        // Kick off uploads for the newly added files only.
-        next.forEach((qf, i) => uploadOne(qf, startIndex + i));
-        return merged;
-      });
+      const startIndex = queueLenRef.current;
+      queueLenRef.current = startIndex + next.length;
+
+      // Pure state update; uploads kicked off OUTSIDE the updater so React
+      // StrictMode's double-invoked updaters can never duplicate them.
+      setQueue((prev) => [...prev, ...next]);
+      next.forEach((qf, i) => void uploadOne(qf, startIndex + i));
 
       if (rejected > 0) {
         setLoadError(

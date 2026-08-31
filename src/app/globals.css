@@ -1,0 +1,6 @@
+/* Global styles — Tailwind v4 entry point. */
+@import "tailwindcss";
+
+html {
+  color-scheme: dark;
+}

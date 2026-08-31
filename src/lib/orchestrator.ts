@@ -247,7 +247,12 @@ export async function assembleReviewBatch(
           assetStore: deps.assetStore,
           textBank: deps.textBank,
           renderer: deps.renderer,
-          lastUsedIndex: deps.lastUsedFreshTextIndex ?? 0,
+          // Pass through UNCHANGED: undefined means "no test override" and
+          // makes the lane read AND persist rotation in lane_rotation_state.
+          // (Previously `?? 0` was passed, which the lane treats as a test
+          // override — production batches used index 0 forever and never
+          // advanced rotation.)
+          lastUsedIndex: deps.lastUsedFreshTextIndex,
         }),
       batchId,
       brand

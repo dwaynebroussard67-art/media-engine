@@ -8,11 +8,11 @@
 //   Array of { file: string (relative path from manifest dir), brand, category, tags? }
 //
 // Usage:
-//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx ts-node scripts/seed.ts \
-//     --manifest ./seeds/seed-manifest.json
+//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed
+//   (or: npx tsx scripts/seed.ts --manifest ./seeds/seed-manifest.json)
 //
 // Unverified — traced by hand.
-// ts-node must be installed: npm i -D ts-node
+// tsx is already a devDependency — no ts-node install needed.
 
 import * as fs from 'fs';
 import * as path from 'path';

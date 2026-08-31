@@ -59,9 +59,19 @@ export async function findMerchandiseCandidate(
 ): Promise<MerchCandidate> {
 
   // ── Step 1: Gallery reuse ─────────────────────────────────────────────────
+  // Derive query tags from the merch query. The GalleryMatcher is a TAG
+  // OVERLAP heuristic that returns undefined when given no tags — calling it
+  // without tags (the previous behavior) made gallery reuse unreachable and
+  // silently degenerated the strict hierarchy to catalog-or-AI.
+  const queryTags = deps.merchQuery
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+
   const artAssets = await deps.assetStore.list({ brand, category: 'art' });
   const closestMatch = deps.galleryMatcher.findClosest(artAssets, {
     category: 'art',
+    tags: queryTags,
   });
 
   if (
