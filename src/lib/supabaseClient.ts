@@ -1,50 +1,18 @@
-// src/lib/supabaseClient.ts
-// Lazily-initialized, purpose-scoped Supabase clients.
-//
-//   getSupabaseAdmin() — service role, for server-side DB and Storage operations.
-//                        Never expose to the browser.
-//   verifyUserJwt()    — validates a caller JWT via an anon-key client (the
-//                        correct verification path; service role bypasses auth).
-//
-// Env vars are read at first use, not at import time, so pure-logic test
-// suites can import modules from this tree without a live Supabase env.
-
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`[Supabase] Missing required env var: ${name}`);
-  return v;
-}
+// Vite exposes only VITE_-prefixed vars to the browser. The ANON key is safe to
+// ship to the client; row-level security on Supabase is what protects the data.
+const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-let _admin: SupabaseClient | null = null;
+// If env isn't wired yet, the app still runs fully on local (zustand/localStorage).
+// Supabase just becomes a no-op until the keys are set. Nothing breaks.
+export const supabaseEnabled = Boolean(url && anon);
 
-export function getSupabaseAdmin(): SupabaseClient {
-  if (!_admin) {
-    _admin = createClient(requireEnv('SUPABASE_URL'), requireEnv('SUPABASE_SERVICE_ROLE_KEY'), {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  }
-  return _admin;
-}
+export const supabase: SupabaseClient | null = supabaseEnabled
+  ? createClient(url as string, anon as string, { auth: { persistSession: false } })
+  : null;
 
-export async function verifyUserJwt(
-  bearerToken: string,
-): Promise<{ id: string; email?: string } | null> {
-  const anonClient = createClient(requireEnv('SUPABASE_URL'), requireEnv('SUPABASE_ANON_KEY'), {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${bearerToken}` } },
-  });
-  const { data, error } = await anonClient.auth.getUser();
-  if (error || !data.user) return null;
-  return data.user.email ? { id: data.user.id, email: data.user.email } : { id: data.user.id };
-}
-
-/**
- * Resets the cached admin client. Test isolation only — never call in
- * production code.
- * @internal
- */
-export function _resetSupabaseAdminForTesting(): void {
-  _admin = null;
+if (!supabaseEnabled && typeof window !== 'undefined') {
+  console.info('[supabase] no VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY — running local-only.');
 }

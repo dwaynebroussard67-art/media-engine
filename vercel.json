@@ -1,13 +1,7 @@
-
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "crons": [
-    {
-      "path": "/api/batch?brand=misfit",
-      "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/batch?brand=forge",
-      "schedule": "0 8 * * *"
-    }
+    { "path": "/api/cron", "schedule": "0 * * * *" }
   ]
 }
