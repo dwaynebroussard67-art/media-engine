@@ -7,10 +7,14 @@
 // All other behavior is identical to the Stage 1 version — read Section 2.10.
 // Do NOT change anything else in this file.
 //
-// Unverified — traced by hand.
+// 2026-10-15: added runtime declaration + content sniffing (see 5b).
+// Otherwise unchanged — traced by hand.
+
+export const runtime = 'nodejs'; // sharp is used for content sniffing — not edge-compatible.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
+import sharp from 'sharp';
 import { verifyUserJwt, getSupabaseAdmin } from '../../../lib/supabaseClient';
 import { addToGallery, supabaseAssetStore } from '../../../lib/permanentAssets';
 import type { AssetBrand, AssetCategory, GalleryAsset } from '../../../types/media';
@@ -29,6 +33,13 @@ const ALLOWED_MIME_TYPES: ReadonlyMap<string, string> = new Map([
   ['image/webp', 'webp'],
 ]);
 const MAX_BYTES = 15 * 1024 * 1024; // 15 MB
+
+// What sharp actually decodes → the extension we will store it under.
+const FORMAT_TO_EXT: ReadonlyMap<string, string> = new Map([
+  ['png', 'png'],
+  ['jpeg', 'jpg'],
+  ['webp', 'webp'],
+]);
 
 function parseWriterIds(): string[] {
   return (process.env.GALLERY_WRITER_IDS ?? '')
@@ -124,17 +135,53 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'File exceeds 15 MB limit' }, { status: 413 });
   }
 
+  // 5b. Content sniff (red-team finding F-03).
+  // `file.type` is a client-supplied string. Trusting it meant a writer could
+  // store arbitrary bytes — HTML, for instance — in the PUBLIC bucket under a
+  // .png key, served with a content-type they chose. The declared MIME must
+  // now agree with what the decoder actually sees, and the extension comes
+  // from the sniffed format, never from the filename or the declared type.
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
+
+  let sniffedFormat: string | undefined;
+  try {
+    const metadata = await sharp(fileBuffer).metadata();
+    sniffedFormat = metadata.format;
+  } catch {
+    return NextResponse.json(
+      { error: 'File is not a decodable image (png, jpeg, or webp).' },
+      { status: 415 }
+    );
+  }
+
+  const sniffedExt = sniffedFormat ? FORMAT_TO_EXT.get(sniffedFormat) : undefined;
+  if (!sniffedExt) {
+    return NextResponse.json(
+      {
+        error: `File content is "${sniffedFormat ?? 'unknown'}", which is not an allowed image type.`,
+      },
+      { status: 415 }
+    );
+  }
+  if (sniffedExt !== ext) {
+    return NextResponse.json(
+      {
+        error: `Declared type (${file.type}) does not match the actual content (${sniffedFormat}).`,
+      },
+      { status: 415 }
+    );
+  }
+
   // 6. Upload to Storage.
   const assetId = randomUUID();
-  const storagePath = `gallery/${brandRaw}/${assetId}.${ext}`;
+  const storagePath = `gallery/${brandRaw}/${assetId}.${sniffedExt}`;
   const db = getSupabaseAdmin();
-
-  const fileBuffer = Buffer.from(await file.arrayBuffer());
 
   const { error: uploadError } = await db.storage
     .from('media-engine')
     .upload(storagePath, fileBuffer, {
-      contentType: file.type,
+      // The sniffed type, not the declared one.
+      contentType: `image/${sniffedFormat === 'jpg' ? 'jpeg' : sniffedFormat}`,
       upsert: false,
     });
 

@@ -1,4 +1,3 @@
-
 {
   "crons": [
     {
@@ -7,7 +6,7 @@
     },
     {
       "path": "/api/batch?brand=forge",
-      "schedule": "0 8 * * *"
+      "schedule": "20 8 * * *"
     }
   ]
 }

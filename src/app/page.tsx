@@ -269,6 +269,43 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* ── Setup banner ─────────────────────────────────────────────────── */}
+      {status && (() => {
+        const cfg = status.config;
+        const failing = Object.entries(cfg).filter(([, v]) => !v);
+        const oracleHidden =
+          (status.review?.misfit.oracleRejected ?? 0) + (status.review?.forge.oracleRejected ?? 0);
+        if (failing.length === 0 && oracleHidden === 0) return null;
+        return (
+          <div className="flex flex-col gap-2">
+            {failing.length > 0 && (
+              <Link
+                href="/setup"
+                className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200"
+              >
+                <span className="font-medium">
+                  Setup incomplete — {failing.length} config check{failing.length === 1 ? '' : 's'} failing
+                </span>
+                <span className="mt-0.5 block text-xs text-amber-300/80">
+                  {failing.map(([k]) => k).join(', ')} · open Setup for the guided version
+                </span>
+              </Link>
+            )}
+            {oracleHidden > 0 && (
+              <Link
+                href="/review"
+                className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-300"
+              >
+                <span className="font-medium">{oracleHidden} item(s) hidden by the oracle</span>
+                <span className="mt-0.5 block text-xs text-neutral-500">
+                  They are in the queue, not lost. Open Review and switch on &ldquo;Show oracle-rejected items&rdquo;.
+                </span>
+              </Link>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ── Config chips ─────────────────────────────────────────────────── */}
       {status && (
         <div className="flex flex-wrap gap-1.5">

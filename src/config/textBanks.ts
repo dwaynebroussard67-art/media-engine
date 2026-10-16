@@ -11,6 +11,20 @@
 
 import type { Brand } from '../types/media';
 
+/**
+ * TRUE while TEXT_BANKS is still model-written placeholder copy.
+ *
+ * Flip this to false ONLY after every line above is D's own writing. /setup
+ * reads this flag and blocks launch with it, because "nothing generated ships
+ * under Misfit's name until these are his words" (dossier §7.4) has been a
+ * written rule since Stage 1 and has never been machine-enforced.
+ *
+ * This is an honesty flag, not a security control: it cannot detect that you
+ * typed a placeholder back in. It can only stop the pipeline from looking
+ * "ready" while the words are still borrowed.
+ */
+export const TEXT_BANKS_ARE_PLACEHOLDER = true;
+
 export const TEXT_BANKS: Record<Brand, readonly string[]> = {
   misfit: [
     // PLACEHOLDER — replace with D's actual scripture-anchored misfit copy

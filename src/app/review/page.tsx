@@ -11,82 +11,22 @@
 //   - ReviewCard handles all item interaction
 //
 // Unverified — traced by hand. Must be checked against:
-//   1. @supabase/supabase-js v2 session API (createBrowserClient or createClient).
+//   1. @supabase/supabase-js v2 session API (via lib/browserSupabase).
 //   2. Next.js App Router 'use client' data-fetching pattern.
 //   3. Email OTP flow in supabase-js v2.
 
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { createClient, type SupabaseClient, type Session } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
+import { browserSupabase } from '../../lib/browserSupabase';
 import { ReviewCard } from '../../components/ReviewCard';
-import type { ReviewItem, ReviewDecision, Brand } from '../../types/media';
-
-// ---------------------------------------------------------------------------
-// Supabase browser client — ANON key only. Never use service-role in the browser.
-// ---------------------------------------------------------------------------
-
-function getBrowserSupabase(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    throw new Error(
-      'NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set'
-    );
-  }
-  return createClient(url, key);
-}
-
-// Singleton for the browser client.
-let _browserClient: SupabaseClient | null = null;
-function browserClient(): SupabaseClient {
-  if (!_browserClient) _browserClient = getBrowserSupabase();
-  return _browserClient;
-}
-
-// ---------------------------------------------------------------------------
-// Types mirroring review_queue row shape returned from the API.
-// ---------------------------------------------------------------------------
-
-interface QueueItem {
-  id: string;
-  brand: Brand;
-  lane: string;
-  image_url: string;
-  source_data: Record<string, unknown>;
-  oracle_result: ReviewItem['oracleResult'];
-  merch_meta: unknown;
-  queued_at: number;
-  status: string;
-}
-
-function queueItemToReviewItem(row: QueueItem): ReviewItem {
-  // merch_meta is a MerchCandidate: surface its `source` as merchSource
-  // (drives the ReviewCard badge) and its human-readable `detail` as
-  // sourceDetail — not the raw JSON blob.
-  const merch =
-    row.merch_meta !== null && typeof row.merch_meta === 'object'
-      ? (row.merch_meta as { source?: unknown; detail?: unknown })
-      : null;
-  const merchSource =
-    merch && typeof merch.source === 'string'
-      ? (merch.source as ReviewItem['merchSource'])
-      : undefined;
-  const sourceDetail =
-    merch && typeof merch.detail === 'string' ? merch.detail : undefined;
-
-  return {
-    id: row.id,
-    imageUrl: row.image_url,
-    brand: row.brand,
-    generationLane: row.lane as ReviewItem['generationLane'],
-    sourceData: row.source_data,
-    createdAt: row.queued_at,
-    oracleResult: row.oracle_result,
-    ...(merchSource ? { merchSource } : {}),
-    ...(sourceDetail ? { sourceDetail } : {}),
-  };
-}
+import { queueRowToReviewItem, type ReviewQueueRow } from '../../lib/review/queueRow';
+import type { Brand, ReviewItem, ReviewDecision } from '../../types/media';
+// Row → ReviewItem mapping lives in ONE place now (src/lib/review/queueRow.ts).
+// It used to be duplicated here and in /api/review/[id] — which is how the
+// merch badge silently vanished once already (DEBUG-REPORT Bug 5).
+type QueueItem = ReviewQueueRow;
 
 // ---------------------------------------------------------------------------
 // Toast — minimal, no dependency.
@@ -129,6 +69,10 @@ export default function ReviewPage() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  // Oracle-rejected items are hidden by default. Before this toggle existed
+  // they were invisible with no way to see them — a batch could look like it
+  // produced nothing while 3 in 10 items sat in the queue (red-team F-05).
+  const [showRejected, setShowRejected] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(false);
   const [deciding, setDeciding] = useState<Record<string, boolean>>({});
 
@@ -138,7 +82,7 @@ export default function ReviewPage() {
 
   // Track session.
   useEffect(() => {
-    const client = browserClient();
+    const client = browserSupabase();
     client.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, s) => {
       setSession(s);
@@ -155,8 +99,20 @@ export default function ReviewPage() {
         brand,
         page: String(page),
         pageSize: String(PAGE_SIZE),
+        ...(showRejected ? { includeRejected: 'true' } : {}),
       });
-      const res = await fetch(`/api/review?${params}`);
+      const res = await fetch(`/api/review?${params}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.status === 401 || res.status === 403) {
+        addToast(
+          res.status === 403
+            ? 'This account is not in GALLERY_WRITER_IDS — see /setup.'
+            : 'Session expired — sign in again.',
+          'error'
+        );
+        return;
+      }
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
         addToast(`Failed to load items: ${body.error ?? res.statusText}`, 'error');
@@ -168,14 +124,14 @@ export default function ReviewPage() {
         page: number;
         pageSize: number;
       };
-      setItems(data.items.map(queueItemToReviewItem));
+      setItems(data.items.map(queueRowToReviewItem));
       setTotal(data.total);
     } catch (err) {
       addToast(`Network error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setFetchLoading(false);
     }
-  }, [session, brand, page, addToast]);
+  }, [session, brand, page, showRejected, addToast]);
 
   useEffect(() => {
     void fetchItems();
@@ -196,7 +152,7 @@ export default function ReviewPage() {
   async function handleSendOtp() {
     setAuthLoading(true);
     try {
-      const { error } = await browserClient().auth.signInWithOtp({ email });
+      const { error } = await browserSupabase().auth.signInWithOtp({ email });
       if (error) {
         addToast(`OTP send failed: ${error.message}`, 'error');
       } else {
@@ -211,7 +167,7 @@ export default function ReviewPage() {
   async function handleVerifyOtp() {
     setAuthLoading(true);
     try {
-      const { error } = await browserClient().auth.verifyOtp({
+      const { error } = await browserSupabase().auth.verifyOtp({
         email,
         token: otp,
         type: 'email',
@@ -225,7 +181,7 @@ export default function ReviewPage() {
   }
 
   async function handleSignOut() {
-    await browserClient().auth.signOut();
+    await browserSupabase().auth.signOut();
   }
 
   // Decision handler.
@@ -387,6 +343,27 @@ export default function ReviewPage() {
               </button>
             ))}
           </section>
+
+          {/* Rejected toggle — the queue hides oracle rejects by default */}
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              marginBottom: 12,
+              fontSize: 13,
+              color: '#888',
+              minHeight: 44,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showRejected}
+              onChange={(e) => setShowRejected(e.target.checked)}
+              style={{ width: 20, height: 20 }}
+            />
+            Show oracle-rejected items (hidden by default)
+          </label>
 
           {/* Queue header */}
           <div

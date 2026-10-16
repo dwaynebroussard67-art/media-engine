@@ -23,7 +23,7 @@ function TopNav() {
         >
           MEDIA<span className="text-emerald-500">·</span>ENGINE
         </Link>
-        <div className="flex items-center gap-1 text-sm">
+        <div className="flex items-center gap-0.5 text-xs sm:gap-1 sm:text-sm">
           <Link
             href="/"
             className="rounded px-3 py-2 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"
@@ -41,6 +41,12 @@ function TopNav() {
             className="rounded px-3 py-2 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"
           >
             Gallery
+          </Link>
+          <Link
+            href="/setup"
+            className="rounded px-3 py-2 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"
+          >
+            Setup
           </Link>
         </div>
       </nav>
