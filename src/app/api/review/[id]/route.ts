@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyUserJwt, getSupabaseAdmin } from '../../../../lib/supabaseClient';
 import { handleReviewDecision, FinalityViolationError } from '../../../../lib/review/reviewQueue';
+import { queueRowToReviewItem, type ReviewQueueRow } from '../../../../lib/review/queueRow';
 import type { ReviewItem, ReviewDecision } from '../../../../types/media';
 
 const VALID_DECISIONS: ReadonlySet<string> = new Set(['post', 'remix', 'reject']);
@@ -82,33 +83,11 @@ export async function POST(
     return NextResponse.json({ error: 'Review item not found' }, { status: 404 });
   }
 
-  // Reconstruct ReviewItem from queue row.
-  // The queue row stores all fields needed to rebuild a ReviewItem.
-  // merch_meta (a MerchCandidate) supplies merchSource + a human-readable
-  // sourceDetail, per dossier §5.16 — previously merchSource was never set,
-  // so the review UI's merch badge could never appear.
-  const merchMeta =
-    row.merch_meta !== null && typeof row.merch_meta === 'object'
-      ? (row.merch_meta as { source?: unknown; detail?: unknown })
-      : null;
-  const merchSource =
-    merchMeta && typeof merchMeta.source === 'string'
-      ? (merchMeta.source as ReviewItem['merchSource'])
-      : undefined;
-  const sourceDetail =
-    merchMeta && typeof merchMeta.detail === 'string' ? merchMeta.detail : undefined;
-
-  const item: ReviewItem = {
-    id: row.id as string,
-    imageUrl: row.image_url as string,
-    brand: row.brand as ReviewItem['brand'],
-    generationLane: row.lane as ReviewItem['generationLane'],
-    sourceData: (row.source_data ?? {}) as Record<string, unknown>,
-    createdAt: row.queued_at as number,
-    oracleResult: row.oracle_result as ReviewItem['oracleResult'],
-    ...(merchSource ? { merchSource } : {}),
-    ...(sourceDetail ? { sourceDetail } : {}),
-  };
+  // Reconstruct ReviewItem from the queue row via the ONE shared mapper
+  // (src/lib/review/queueRow.ts). This mapping used to be copy-pasted here and
+  // in the review page, which is precisely how merchSource stopped being set
+  // and the merch badge disappeared (DEBUG-REPORT Bug 5).
+  const item: ReviewItem = queueRowToReviewItem(row as unknown as ReviewQueueRow);
 
   // Call the decision handler.
   try {

@@ -20,6 +20,16 @@ interface BrandDoctrine {
   readonly forbiddenKeywords: readonly string[];
 }
 
+/**
+ * TRUE while the prose and keyword lists below are model-written placeholders.
+ * The voice keywords are load-bearing: runPrefilter rejects long text without a
+ * voice keyword on the theology-required lanes, so a wrong list silently
+ * changes what reaches review. Flip to false once these are D's actual brand
+ * voice, then re-read the keyword lists against the text banks. /setup shows
+ * this flag as a launch blocker.
+ */
+export const DOCTRINE_IS_PLACEHOLDER = true;
+
 export const DOCTRINE: Readonly<Record<Brand, BrandDoctrine>> = {
   misfit: {
     theology: `

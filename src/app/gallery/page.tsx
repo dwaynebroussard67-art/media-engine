@@ -11,29 +11,13 @@
 // server enforces GALLERY_WRITER_IDS regardless, this is just a faster no.
 
 import { useCallback, useEffect, useState, useRef } from 'react';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { browserSupabase } from '../../lib/browserSupabase';
 import type { AssetBrand, AssetCategory, GalleryAsset } from '../../types/media';
 
-// Lazily-initialized browser client (anon key). This MUST NOT run at module
-// scope: `next build` prerenders this page, and a module-scope createClient
-// throws "supabaseUrl is required" when the NEXT_PUBLIC_* vars are absent at
-// build time — which broke production builds. Same lazy-singleton pattern as
-// the review page.
-let _browserClient: SupabaseClient | null = null;
-function browserClient(): SupabaseClient {
-  if (!_browserClient) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !key) {
-      throw new Error(
-        'NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set'
-      );
-    }
-    _browserClient = createClient(url, key);
-  }
-  return _browserClient;
-}
-
+// The browser client lives in ONE place (src/lib/browserSupabase.ts). This page
+// used to carry its own copy of the lazy singleton; the module-scope variant of
+// exactly this code is what crashed `next build` once (DEBUG-REPORT Bug 1).
+// More copies = more chances to reintroduce that bug.
 const BRANDS: AssetBrand[] = ['misfit', 'forge', 'shared'];
 const CATEGORIES: AssetCategory[] = ['logo', 'apparel', 'art', 'atmosphere', 'approved_post'];
 
@@ -83,10 +67,15 @@ export default function GalleryPage() {
     loadAssets(brand);
   }, [brand, loadAssets]);
 
-  // Deep link: /gallery?brand=forge pre-selects the brand (dashboard links here).
+  // Deep link: /gallery?brand=forge&category=art pre-selects what to upload as.
+  // The setup flow links here with the exact preset each lane needs, so D never
+  // has to remember that fresh-text cards want atmosphere/art bases.
   useEffect(() => {
-    const b = new URLSearchParams(window.location.search).get('brand');
+    const params = new URLSearchParams(window.location.search);
+    const b = params.get('brand');
     if (b === 'misfit' || b === 'forge' || b === 'shared') setBrand(b);
+    const c = params.get('category');
+    if (c && (CATEGORIES as string[]).includes(c)) setCategory(c as AssetCategory);
   }, []);
 
   // --- Upload a single file against the existing Stage 1 endpoint --------
@@ -101,7 +90,7 @@ export default function GalleryPage() {
 
       const {
         data: { session },
-      } = await browserClient().auth.getSession();
+      } = await browserSupabase().auth.getSession();
 
       if (!session) {
         patch('error', 'Not signed in — sign in on the review page first.');
@@ -122,7 +111,14 @@ export default function GalleryPage() {
         const body = await res.json();
 
         if (!res.ok) {
-          patch('error', body.error ?? `Upload failed (${res.status})`);
+          // 403 here almost always means this account is not in
+          // GALLERY_WRITER_IDS — say so instead of leaving D guessing.
+          patch(
+            'error',
+            res.status === 403
+              ? 'Forbidden — this account is not in GALLERY_WRITER_IDS. Check /setup.'
+              : (body.error ?? `Upload failed (${res.status})`)
+          );
           return;
         }
 

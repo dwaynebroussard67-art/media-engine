@@ -50,8 +50,11 @@ export class RenderUploadError extends Error {
 /**
  * Breaks `text` into lines of at most `maxCharsPerLine` characters,
  * splitting on word boundaries. Never splits mid-word.
+ *
+ * Exported so the setup smoke render can assert wrap behaviour without
+ * duplicating it (2026-10-15). Signature and behaviour unchanged.
  */
-function wrapText(text: string, maxCharsPerLine: number): string[] {
+export function wrapText(text: string, maxCharsPerLine: number): string[] {
   const words = text.split(/\s+/);
   const lines: string[] = [];
   let current = '';
@@ -87,7 +90,7 @@ function wrapText(text: string, maxCharsPerLine: number): string[] {
  * `.scrim` field — a prior draft invented phantom fields; see dossier §5.2).
  * If backgroundColor is null, no rectangle is drawn.
  */
-function buildSvgOverlay(
+export function buildSvgOverlay(
   text: string,
   brand: Brand,
   width: number,
